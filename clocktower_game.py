@@ -245,6 +245,15 @@ class ClocktowerGame:
                 
                 if self._role_gets_information(role_key) and result:
                     self.night_action_results[username] = result
+            elif role.lower().replace(" ", "_") == "spy":
+                for player in self.players:
+                    if player.role and player.role.name == "Spy" and player.is_alive:
+                        print(f"Executing {player.username} (Spy): automatic")
+                        result = executor.execute_role_action("spy", player.username, [])
+                        print(f"  → {result}")
+                        if result:
+                            self.night_action_results[player.username] = result
+                        break
 
     def _on_actions_complete(self):
         self._execute()
