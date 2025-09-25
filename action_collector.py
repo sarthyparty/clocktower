@@ -11,7 +11,7 @@ class ActionCollector:
     def initialize_collection(self, players_needing_actions: Dict[str, str]):
         self.expected_players = players_needing_actions.copy()
         self.collected_actions = {}
-        self.is_complete = False
+        self.is_complete = len(players_needing_actions) == 0
 
     def submit_action(self, username: str, choices: List[str]) -> Dict:
         if username not in self.expected_players:

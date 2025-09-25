@@ -44,9 +44,15 @@ class RoleExecutor:
 
     def fortune_teller_action(self, username: str, choices: List[str]) -> str:
         if len(choices) < 2:
-            return "Need 2 players to read"
+            player = self.get_player_by_name(username)
+            other_players = [p for p in self.players if p != player and p.is_alive]
+            if len(other_players) < 2:
+                return "Not enough players to read"
+            chosen_players = random.sample(other_players, 2)
+            choices = [p.username for p in chosen_players]
+        else:
+            chosen_players = [self.get_player_by_name(name) for name in choices[:2]]
 
-        chosen_players = [self.get_player_by_name(name) for name in choices[:2]]
         has_demon = any(p.role and p.role.role_type == RoleType.DEMON for p in chosen_players)
         return f"{'YES' if has_demon else 'NO'} - one of {choices[0]} or {choices[1]} is a Demon"
 

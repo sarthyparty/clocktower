@@ -13,8 +13,9 @@ class ClocktowerGame:
         self.day_count: int = 0
         self.night_count: int = 0
         self._random = random
+        self.night_0_results: Dict[str, str] = {}
 
-        self.action_collector = ActionCollector(completion_callback=self._execute_night_actions)
+        self.action_collector = ActionCollector(completion_callback=self._on_actions_complete)
 
 
     def start_game(self, usernames: List[str], hardcoded_roles: Dict[str, str] = None) -> Dict:
@@ -35,8 +36,7 @@ class ClocktowerGame:
         self.phase = GamePhase.NIGHT
         self.night_count = 0
 
-        # Collect first night actions
-        self._collect_night_actions()
+        self._start_first_night()
 
         return {
             "message": f"Game started with {player_count} players",
@@ -104,20 +104,15 @@ class ClocktowerGame:
     def progress_to_day(self) -> Dict:
         if self.phase != GamePhase.NIGHT:
             return {"error": "Can only progress to day from night"}
-
-        if not self._can_progress_to_day():
+        
+        if not self.action_collector.is_complete:
             status = self.action_collector.get_collection_status()
-            return {"error": "Cannot progress to day - pending night actions",
-                   "pending_players": status["pending_players"]}
-
-        # Execute all collected actions
+            return {
+                "error": "Cannot progress to day - pending night actions",
+                "pending_players": status["pending_players"]
+            }
+        
         self._execute_night_actions()
-
-        # Process end of night effects
-        night_end_result = self._process_end_of_night()
-
-        self.day_count += 1
-        self.phase = GamePhase.DAY
 
         alive_players = [p for p in self.players if p.is_alive]
 
@@ -127,7 +122,7 @@ class ClocktowerGame:
             "day_count": self.day_count,
             "alive_players": len(alive_players),
             "players": [{"username": p.username, "alive": p.is_alive} for p in self.players],
-            "night_results": night_end_result
+            "night_results": {"deaths": []}
         }
 
     def progress_to_night(self) -> Dict:
@@ -137,7 +132,6 @@ class ClocktowerGame:
         self.night_count += 1
         self.phase = GamePhase.NIGHT
 
-        # Collect night actions
         self._collect_night_actions()
 
         return {
@@ -145,7 +139,7 @@ class ClocktowerGame:
             "phase": self.phase.value,
             "night_count": self.night_count,
             "alive_players": len([p for p in self.players if p.is_alive]),
-            "pending_actions": len(self.pending_actions)
+            "pending_actions": len(self.action_collector.expected_players)
         }
 
     def get_game_state(self) -> Dict:
@@ -190,16 +184,18 @@ class ClocktowerGame:
             needs_input = False
 
             if self.night_count == 0:
-                pass
-
-            elif self.night_count > 0:
-                if role_name in ["Monk", "Poisoner", "Imp"]:
+                needs_input = False
+            else:
+                if role_name in ["Monk", "Poisoner", "Imp", "Fortune Teller"]:
                     needs_input = True
 
             if needs_input:
                 players_needing_actions[player.username] = role_name
 
         self.action_collector.initialize_collection(players_needing_actions)
+        
+        if not players_needing_actions:
+            self._execute_night_actions()
 
     def submit_night_action(self, username: str, choices: List[str]) -> Dict:
         if self.phase != GamePhase.NIGHT:
@@ -211,8 +207,18 @@ class ClocktowerGame:
         return self.action_collector.is_complete
 
     def _execute_night_actions(self):
+        """Execute night actions and progress to day"""
+        self._execute()
+        self._progress_to_day_automatically()
+    
+    def _execute(self):
+        """Execute night actions without progressing to day"""
         print(f"EXECUTING NIGHT ACTIONS - All actions collected!")
         collected_actions = self.action_collector.get_collected_actions()
+        
+        if isinstance(collected_actions, dict) and "error" in collected_actions:
+            print("No actions to execute")
+            return
 
         if self.night_count == 0:
             night_order = ["Poisoner", "Washerwoman", "Librarian", "Investigator", "Chef", "Empath", "Fortune Teller", "Undertaker", "Butler", "Spy"]
@@ -224,6 +230,7 @@ class ClocktowerGame:
             role = action_data['role']
             actions_by_role[role] = (username, action_data)
 
+        from role_executor import RoleExecutor
         executor = RoleExecutor(self.players)
 
         print(f"\n--- Executing in Night Order ---")
@@ -234,10 +241,48 @@ class ClocktowerGame:
                 result = executor.execute_role_action(role, username, action_data['choices'])
                 print(f"  → {result}")
 
+    def _on_actions_complete(self):
+        """Called when all night actions are collected"""
+        print(f"\\n=== ALL ACTIONS COLLECTED - EXECUTING ===\\n")
+        self._execute()
         self._progress_to_day_automatically()
-
 
     def _progress_to_day_automatically(self):
         self.day_count += 1
         self.phase = GamePhase.DAY
         print(f"\n*** AUTOMATICALLY PROGRESSED TO DAY {self.day_count} ***")
+        
+    def _start_first_night(self):
+        """Automatically execute first night (night 0) without user input"""
+        print(f"\n=== STARTING NIGHT 0 (FIRST NIGHT) ===\n")
+        self.night_count = 0
+        
+        self._execute_night_0_actions()
+    
+    def _execute_night_0_actions(self):
+        """Execute night 0 actions automatically and progress to day"""
+        print("Executing Night 0 actions automatically...")
+        
+        night_0_order = ["poisoner", "washerwoman", "librarian", "investigator", "chef", "empath", "fortune_teller", "undertaker", "butler", "spy"]
+        
+        from role_executor import RoleExecutor
+        executor = RoleExecutor(self.players)
+        
+        self.night_0_results = {}
+        
+        print(f"\n--- Executing Night 0 in Order ---")
+        for role_key in night_0_order:
+            for player in self.players:
+                if player.role and player.role.name.lower().replace(" ", "_") == role_key and player.is_alive:
+                    print(f"Executing {player.username} ({player.role.name})")
+                    result = executor.execute_role_action(role_key, player.username, [])
+                    print(f"  → {result}")
+                    
+                    if result and result != f"{role_key} action not implemented" and result != "No target specified":
+                        self.night_0_results[player.username] = result
+                    break
+        
+        self._progress_to_day_automatically()
+    
+    def get_night_0_results(self) -> Dict[str, str]:
+        return self.night_0_results.copy()
