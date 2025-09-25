@@ -30,7 +30,7 @@ class Role:
 @dataclass
 class Player:
     username: str
-    role: Role
+    role: Optional[Role] = None
     is_alive: bool = True
     is_poisoned: bool = False
 

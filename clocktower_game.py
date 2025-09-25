@@ -2,6 +2,7 @@ import random
 from typing import List, Dict, Optional
 from roles import *
 from action_collector import ActionCollector
+from role_executor import RoleExecutor
 
 
 
@@ -16,16 +17,20 @@ class ClocktowerGame:
         self.action_collector = ActionCollector(completion_callback=self._execute_night_actions)
 
 
-    def start_game(self, usernames: List[str]) -> Dict:
+    def start_game(self, usernames: List[str], hardcoded_roles: Dict[str, str] = None) -> Dict:
         if len(usernames) < 5 or len(usernames) > 15:
             return {"error": "Game requires 5-15 players"}
 
         self.players = [Player(username) for username in usernames]
         player_count = len(usernames)
 
-        role_distribution = self._get_role_distribution(player_count)
-        selected_roles = self._select_roles(role_distribution)
-        self._assign_roles(selected_roles)
+        if hardcoded_roles:
+            self._assign_hardcoded_roles(hardcoded_roles)
+            role_distribution = {"hardcoded": len(hardcoded_roles)}
+        else:
+            role_distribution = self._get_role_distribution(player_count)
+            selected_roles = self._select_roles(role_distribution)
+            self._assign_roles(selected_roles)
 
         self.phase = GamePhase.NIGHT
         self.night_count = 0
@@ -38,7 +43,7 @@ class ClocktowerGame:
             "phase": self.phase.value,
             "players": [{"username": p.username, "alive": p.is_alive} for p in self.players],
             "role_distribution": role_distribution,
-            "pending_actions": len(self.pending_actions)
+            "pending_actions": len(self.action_collector.expected_players)
         }
 
     def _get_role_distribution(self, player_count: int) -> Dict[RoleType, int]:
@@ -76,6 +81,19 @@ class ClocktowerGame:
         selected.extend(random.sample(demon_roles, 1))
 
         return selected
+
+    def _assign_hardcoded_roles(self, hardcoded_roles: Dict[str, str]):
+        from roles import roles
+        print(f"Available roles: {list(roles.keys())}")
+        for player in self.players:
+            if player.username in hardcoded_roles:
+                role_name = hardcoded_roles[player.username]
+                print(f"Looking for role {role_name} for {player.username}")
+                if role_name in roles:
+                    player.role = roles[role_name]
+                    print(f"Assigned {role_name} to {player.username}")
+                else:
+                    print(f"Role {role_name} not found in roles dict")
 
     def _assign_roles(self, roles: List[Role]):
         random.shuffle(self.players)
@@ -193,5 +211,33 @@ class ClocktowerGame:
         return self.action_collector.is_complete
 
     def _execute_night_actions(self):
+        print(f"EXECUTING NIGHT ACTIONS - All actions collected!")
         collected_actions = self.action_collector.get_collected_actions()
-        pass
+
+        if self.night_count == 0:
+            night_order = ["Poisoner", "Washerwoman", "Librarian", "Investigator", "Chef", "Empath", "Fortune Teller", "Undertaker", "Butler", "Spy"]
+        else:
+            night_order = ["Poisoner", "Monk", "Scarlet Woman", "Imp", "Ravenkeeper", "Empath", "Fortune Teller", "Undertaker", "Butler", "Spy"]
+
+        actions_by_role = {}
+        for username, action_data in collected_actions.items():
+            role = action_data['role']
+            actions_by_role[role] = (username, action_data)
+
+        executor = RoleExecutor(self.players)
+
+        print(f"\n--- Executing in Night Order ---")
+        for role in night_order:
+            if role in actions_by_role:
+                username, action_data = actions_by_role[role]
+                print(f"Executing {username} ({role}): {action_data['choices']}")
+                result = executor.execute_role_action(role, username, action_data['choices'])
+                print(f"  → {result}")
+
+        self._progress_to_day_automatically()
+
+
+    def _progress_to_day_automatically(self):
+        self.day_count += 1
+        self.phase = GamePhase.DAY
+        print(f"\n*** AUTOMATICALLY PROGRESSED TO DAY {self.day_count} ***")
