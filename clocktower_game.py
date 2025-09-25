@@ -14,6 +14,8 @@ class ClocktowerGame:
         self.night_count: int = 0
         self._random = random
         self.night_0_results: Dict[str, str] = {}
+        self.night_action_results: Dict[str, str] = {}
+        self.game_result: Optional[Dict] = None
 
         self.action_collector = ActionCollector(completion_callback=self._on_actions_complete)
 
@@ -96,7 +98,7 @@ class ClocktowerGame:
                     print(f"Role {role_name} not found in roles dict")
 
     def _assign_roles(self, roles: List[Role]):
-        random.shuffle(self.players)
+        random.shuffle(roles)
         for i, player in enumerate(self.players):
             if i < len(roles):
                 player.role = roles[i]
@@ -163,17 +165,16 @@ class ClocktowerGame:
         alive_good = [p for p in alive_players if p.role and p.role.team == Team.GOOD]
         alive_evil = [p for p in alive_players if p.role and p.role.team == Team.EVIL]
 
-        demons_alive = [p for p in alive_players if p.role and p.role.role_type == RoleType.DEMON]
-
-        if not demons_alive:
-            return {"winner": "good", "reason": "All demons eliminated"}
-
         if len(alive_evil) >= len(alive_good):
-            return {"winner": "evil", "reason": "Evil players equal or outnumber good players"}
+            return {"winner": "evil", "reason": "Evil equals or outnumbers good"}
+
+        if not alive_evil:
+            return {"winner": "good", "reason": "All evil players eliminated"}
 
         return None
 
     def _collect_night_actions(self):
+        self.night_action_results = {}
         players_needing_actions = {}
 
         for player in self.players:
@@ -238,19 +239,27 @@ class ClocktowerGame:
             if role in actions_by_role:
                 username, action_data = actions_by_role[role]
                 print(f"Executing {username} ({role}): {action_data['choices']}")
-                result = executor.execute_role_action(role, username, action_data['choices'])
+                role_key = role.lower().replace(" ", "_")
+                result = executor.execute_role_action(role_key, username, action_data['choices'])
                 print(f"  → {result}")
+                
+                if self._role_gets_information(role_key) and result:
+                    self.night_action_results[username] = result
 
     def _on_actions_complete(self):
-        """Called when all night actions are collected"""
-        print(f"\\n=== ALL ACTIONS COLLECTED - EXECUTING ===\\n")
         self._execute()
-        self._progress_to_day_automatically()
+        return self._progress_to_day_automatically()
 
     def _progress_to_day_automatically(self):
+        win_condition = self.check_win_condition()
+        if win_condition:
+            self.phase = GamePhase.ENDED
+            self.game_result = win_condition
+            return win_condition
+        
         self.day_count += 1
         self.phase = GamePhase.DAY
-        print(f"\n*** AUTOMATICALLY PROGRESSED TO DAY {self.day_count} ***")
+        return None
         
     def _start_first_night(self):
         """Automatically execute first night (night 0) without user input"""
@@ -286,3 +295,13 @@ class ClocktowerGame:
     
     def get_night_0_results(self) -> Dict[str, str]:
         return self.night_0_results.copy()
+    
+    def get_night_action_results(self) -> Dict[str, str]:
+        return self.night_action_results.copy()
+    
+    def _role_gets_information(self, role_name: str) -> bool:
+        information_roles = [
+            "fortune_teller", "empath", "washerwoman", "librarian", 
+            "investigator", "chef", "undertaker", "ravenkeeper", "spy"
+        ]
+        return role_name.lower() in information_roles

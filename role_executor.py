@@ -34,6 +34,10 @@ class RoleExecutor:
             return f"{username} kills themselves"
         else:
             target = self.get_player_by_name(target_name)
+            
+            if target.role and target.role.name == "Soldier" and not target.is_poisoned:
+                return f"{target_name} is safe (Soldier cannot be killed by Demon)"
+            
             target.is_alive = False
             return f"{target_name} is killed"
 
@@ -54,7 +58,10 @@ class RoleExecutor:
             chosen_players = [self.get_player_by_name(name) for name in choices[:2]]
 
         has_demon = any(p.role and p.role.role_type == RoleType.DEMON for p in chosen_players)
-        return f"{'YES' if has_demon else 'NO'} - one of {choices[0]} or {choices[1]} is a Demon"
+        if has_demon:
+            return f"YES - one of {choices[0]} or {choices[1]} is a Demon"
+        else:
+            return f"NO - neither {choices[0]} nor {choices[1]} is a Demon"
 
     def empath_action(self, username: str, choices: List[str]) -> str:
         player = self.get_player_by_name(username)
@@ -138,10 +145,18 @@ class RoleExecutor:
         return "Butler action completed"
 
     def spy_action(self, username: str, choices: List[str]) -> str:
-        return "Spy sees the grimoire"
+        grimoire_info = []
+        for player in self.players:
+            if player.role:
+                status = "alive" if player.is_alive else "dead"
+                poison = " (poisoned)" if player.is_poisoned else ""
+                grimoire_info.append(f"{player.username}: {player.role.name} ({player.role.team.value}) - {status}{poison}")
+        
+        return "GRIMOIRE:\n" + "\n".join(grimoire_info)
 
     def scarlet_woman_action(self, username: str, choices: List[str]) -> str:
         return "Scarlet Woman is ready to become Demon"
+    
 
     def execute_role_action(self, role_name: str, username: str, choices: List[str]) -> str:
         role_methods = {

@@ -22,16 +22,22 @@ class ActionCollector:
 
         self.collected_actions[username] = choices
 
-        if len(self.collected_actions) == len(self.expected_players):
-            self.is_complete = True
-            if self.completion_callback:
-                self.completion_callback()
-
-        return {
+        result = {
             "success": True,
             "message": f"Action submitted for {username}",
-            "collection_complete": self.is_complete
+            "collection_complete": False,
+            "game_result": None
         }
+
+        if len(self.collected_actions) == len(self.expected_players):
+            self.is_complete = True
+            result["collection_complete"] = True
+            
+            if self.completion_callback:
+                game_result = self.completion_callback()
+                result["game_result"] = game_result
+
+        return result
 
     def get_collection_status(self) -> Dict:
         pending_players = [username for username in self.expected_players.keys()

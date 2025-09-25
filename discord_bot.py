@@ -15,6 +15,7 @@ games: Dict[int, ClocktowerGame] = {}
 player_guilds: Dict[int, int] = {}
 player_usernames: Dict[int, str] = {}
 test_mode_guilds: Dict[int, bool] = {}
+game_channels: Dict[int, int] = {}
 
 @bot.event
 async def on_ready():
@@ -72,6 +73,7 @@ async def start_game(ctx, *players):
     # Create new game
     game = ClocktowerGame()
     games[guild_id] = game
+    game_channels[guild_id] = ctx.channel.id
 
     # Map members to this guild and store their IDs
     if not is_test_mode:
@@ -87,6 +89,8 @@ async def start_game(ctx, *players):
     if "error" in result:
         await ctx.send(f"Error starting game: {result['error']}")
         del games[guild_id]
+        if guild_id in game_channels:
+            del game_channels[guild_id]
         return
 
     await ctx.send(f"🎭 **Clocktower Game Started!**\n"
@@ -140,6 +144,54 @@ async def progress_to_night(ctx):
 
     await check_night_actions(ctx.guild)
 
+def create_player_circle(players):
+    if not players:
+        return "No players"
+    
+    def get_player_symbol(player):
+        if not player.is_alive:
+            return "💀"
+        else:
+            return "🔵"
+    
+    def format_player(player):
+        symbol = get_player_symbol(player)
+        return f"{symbol} {player.username}"
+    
+    player_count = len(players)
+    
+    if player_count <= 6:
+        formatted_players = [format_player(p) for p in players]
+        return "\n".join(formatted_players)
+    
+    elif player_count <= 10:
+        top_half = players[:player_count//2]
+        bottom_half = players[player_count//2:]
+        bottom_half.reverse()
+        
+        circle = []
+        
+        for player in top_half:
+            circle.append(f"        {format_player(player)}")
+        
+        circle.append("")
+        
+        for player in bottom_half:
+            circle.append(f"        {format_player(player)}")
+        
+        return "\n".join(circle)
+    
+    else:
+        rows = []
+        per_row = (player_count + 2) // 3
+        
+        for i in range(0, player_count, per_row):
+            row_players = players[i:i+per_row]
+            row_text = "  ".join([format_player(p) for p in row_players])
+            rows.append(f"    {row_text}")
+        
+        return "\n".join(rows)
+
 @bot.command(name='state')
 async def game_state(ctx):
     if ctx.guild is None:
@@ -160,10 +212,10 @@ async def game_state(ctx):
     embed.add_field(name="Phase", value=f"{game.phase.value.title()} {game.day_count if game.phase.value == 'day' else game.night_count}", inline=True)
     embed.add_field(name="Players Alive", value=str(len(alive_players)), inline=True)
     embed.add_field(name="Total Players", value=str(len(game.players)), inline=True)
-    embed.add_field(name="Alive Players", value=', '.join(alive_players) if alive_players else "None", inline=False)
-
-    if dead_players:
-        embed.add_field(name="Dead Players", value=', '.join(dead_players), inline=False)
+    
+    circle_visual = create_player_circle(game.players)
+    embed.add_field(name="🔄 Player Circle", value=circle_visual, inline=False)
+    embed.add_field(name="Legend", value="🔵 Alive  💀 Dead", inline=False)
 
     if game.phase.value == "night":
         status = game.action_collector.get_collection_status()
@@ -239,9 +291,92 @@ async def send_night_0_results(guild, game, player_members, is_test_mode=False):
                 dm_failures.append(username)
     
     if dm_failures:
-        channel = discord.utils.find(lambda c: c.name in ['general', 'game', 'clocktower'], guild.text_channels)
+        guild_id = guild.id
+        channel_id = game_channels.get(guild_id)
+        channel = guild.get_channel(channel_id) if channel_id else None
         if channel:
             await channel.send(f"⚠️ **Could not send night 0 results to:** {', '.join(dm_failures)}")
+
+async def gitsend_night_action_results(guild, game):
+    night_results = game.get_night_action_results()
+    
+    if not night_results:
+        return
+    
+    is_test_mode = test_mode_guilds.get(guild.id, False)
+    dm_failures = []
+    
+    if is_test_mode:
+        guild_id = guild.id
+        test_user_id = None
+        for uid, gid in player_guilds.items():
+            if gid == guild_id:
+                test_user_id = uid
+                break
+        
+        if test_user_id:
+            test_member = guild.get_member(test_user_id)
+            if test_member:
+                embed = discord.Embed(
+                    title=f"🧪🌙 Test Mode - Night {game.night_count} Results",
+                    description="Your characters learned:",
+                    color=0x5865f2
+                )
+                
+                for username, result in night_results.items():
+                    player = next((p for p in game.players if p.username == username), None)
+                    if player and player.role:
+                        embed.add_field(
+                            name=f"{username} ({player.role.name})",
+                            value=result,
+                            inline=False
+                        )
+                
+                try:
+                    await test_member.send(embed=embed)
+                except discord.Forbidden:
+                    dm_failures.extend(night_results.keys())
+    else:
+        for username, result in night_results.items():
+            member_id = None
+            for uid, uname in player_usernames.items():
+                if uname == username and player_guilds.get(uid) == guild.id:
+                    member_id = uid
+                    break
+            
+            if not member_id:
+                continue
+                
+            member = guild.get_member(member_id)
+            if not member:
+                continue
+                
+            player = next((p for p in game.players if p.username == username), None)
+            if not player or not player.role:
+                continue
+                
+            embed = discord.Embed(
+                title=f"🌙 Night {game.night_count} Information",
+                description=f"**{player.role.name}**\nHere's what you learned:",
+                color=0x5865f2
+            )
+            
+            embed.add_field(name="Your Information", value=result, inline=False)
+            
+            try:
+                await member.send(embed=embed)
+            except discord.Forbidden:
+                dm_failures.append(username)
+            except Exception as e:
+                print(f"Failed to send night result to {username}: {e}")
+                dm_failures.append(username)
+    
+    if dm_failures:
+        guild_id = guild.id
+        channel_id = game_channels.get(guild_id)
+        channel = guild.get_channel(channel_id) if channel_id else None
+        if channel:
+            await channel.send(f"⚠️ **Could not send night results to:** {', '.join(dm_failures)}")
 
 async def check_night_actions(guild):
     guild_id = guild.id
@@ -488,20 +623,62 @@ async def handle_action_dm(message):
         if result.get("collection_complete"):
             guild = bot.get_guild(guild_id)
             if guild:
-                channel = discord.utils.find(lambda c: c.name in ['general', 'game', 'clocktower'], guild.text_channels)
+                channel_id = game_channels.get(guild_id)
+                channel = guild.get_channel(channel_id) if channel_id else None
                 if channel:
                     await channel.send("🌙 All night actions submitted! Executing...")
-                    await channel.send(f"☀️ **Day {game.day_count} begins!**")
                     
-                    alive_players = [p for p in game.players if p.is_alive]
-                    dead_players = [p for p in game.players if not p.is_alive]
-                    
-                    if dead_players:
-                        deaths_this_phase = []
-                        for p in dead_players:
-                            deaths_this_phase.append(p.username)
-                        if deaths_this_phase:
-                            await channel.send(f"💀 **Deaths:** {', '.join(deaths_this_phase)}")
+                    game_result = result.get("game_result")
+                    if game_result:
+                        winner = game_result["winner"]
+                        reason = game_result["reason"]
+                        
+                        embed = discord.Embed(
+                            title="🎯 GAME OVER!",
+                            description=f"**{winner.upper()} TEAM WINS!**",
+                            color=0xff0000 if winner == "evil" else 0x00ff00
+                        )
+                        embed.add_field(name="Reason", value=reason, inline=False)
+                        
+                        alive_players = [p for p in game.players if p.is_alive]
+                        dead_players = [p for p in game.players if not p.is_alive]
+                        
+                        if dead_players:
+                            deaths_list = [p.username for p in dead_players]
+                            embed.add_field(name="💀 Deaths", value=", ".join(deaths_list), inline=False)
+                        
+                        embed.add_field(name="🎭 Final Roles", value="\n".join([
+                            f"{'💀' if not p.is_alive else '✅'} **{p.username}**: {p.role.name} ({p.role.team.value})"
+                            for p in game.players
+                        ]), inline=False)
+                        
+                        await send_night_action_results(guild, game)
+                        await channel.send(embed=embed)
+                        
+                        del games[guild_id]
+                        if guild_id in game_channels:
+                            del game_channels[guild_id]
+                        to_remove = [uid for uid, gid in player_guilds.items() if gid == guild_id]
+                        for uid in to_remove:
+                            del player_guilds[uid]
+                            if uid in player_usernames:
+                                del player_usernames[uid]
+                        if guild_id in test_mode_guilds:
+                            del test_mode_guilds[guild_id]
+                    else:
+                        await send_night_action_results(guild, game)
+                        
+                        await channel.send(f"☀️ **Day {game.day_count} begins!**")
+                        
+                        alive_players = [p for p in game.players if p.is_alive]
+                        dead_players = [p for p in game.players if not p.is_alive]
+                        
+                        if dead_players:
+                            deaths_this_phase = []
+                            for p in dead_players:
+                                deaths_this_phase.append(p.username)
+                            if deaths_this_phase:
+                                await channel.send(f"💀 **Deaths:** {', '.join(deaths_this_phase)}")
     
     except asyncio.TimeoutError:
         await message.channel.send("⏰ Confirmation timed out. Please submit your action again.")
@@ -524,21 +701,11 @@ async def debug_state(ctx):
     embed.add_field(name="Day Count", value=str(game.day_count), inline=True)
     embed.add_field(name="Night Count", value=str(game.night_count), inline=True)
 
-    player_info = []
-    for player in game.players:
-        status_icons = []
-        if not player.is_alive:
-            status_icons.append("💀")
-        if player.is_poisoned:
-            status_icons.append("🟢")
-        
-        role_name = player.role.name if player.role else "No Role"
-        team = player.role.team.value if player.role else "Unknown"
-        
-        status_str = " ".join(status_icons) if status_icons else "✅"
-        player_info.append(f"{status_str} **{player.username}**: {role_name} ({team})")
-
-    embed.add_field(name="Players & Roles", value="\n".join(player_info), inline=False)
+    from role_executor import RoleExecutor
+    executor = RoleExecutor(game.players)
+    grimoire = executor.spy_action("debug", [])
+    
+    embed.add_field(name="🔍 GRIMOIRE", value=f"```{grimoire}```", inline=False)
 
     if game.phase.value == "night":
         status = game.action_collector.get_collection_status()
@@ -553,7 +720,7 @@ async def debug_state(ctx):
 
     await ctx.send(embed=embed)
 
-@bot.command(name='help')
+@bot.command(name='guide')
 async def help_command(ctx):
     embed = discord.Embed(title="🎭 Clocktower Bot Commands", color=0x7289da)
     
@@ -604,11 +771,15 @@ async def end_game(ctx):
         return
 
     del games[guild_id]
+    if guild_id in game_channels:
+        del game_channels[guild_id]
     to_remove = [uid for uid, gid in player_guilds.items() if gid == guild_id]
     for uid in to_remove:
         del player_guilds[uid]
         if uid in player_usernames:
             del player_usernames[uid]
+    if guild_id in test_mode_guilds:
+        del test_mode_guilds[guild_id]
 
     await ctx.send("🎭 Game ended!")
 
