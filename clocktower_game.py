@@ -239,19 +239,17 @@ class ClocktowerGame:
             if role in actions_by_role:
                 username, action_data = actions_by_role[role]
                 print(f"Executing {username} ({role}): {action_data['choices']}")
-                role_key = role.lower().replace(" ", "_")
-                result = executor.execute_role_action(role_key, username, action_data['choices'])
+                result = executor.execute_role_action(role, username, action_data['choices'])
                 print(f"  → {result}")
                 
-                if self._role_gets_information(role_key) and result:
+                if self._role_gets_information(role) and result:
                     self.night_action_results[username] = result
             else:
-                role_key = role.lower().replace(" ", "_")
-                if role_key in ["spy", "empath"]:
+                if role in ["Spy", "Empath"]:
                     for player in self.players:
-                        if player.role and player.role.name.lower().replace(" ", "_") == role_key and player.is_alive:
+                        if player.role and player.role.name == role and player.is_alive:
                             print(f"Executing {player.username} ({role}): automatic")
-                            result = executor.execute_role_action(role_key, player.username, [])
+                            result = executor.execute_role_action(role, player.username, [])
                             print(f"  → {result}")
                             if result:
                                 self.night_action_results[player.username] = result
@@ -283,7 +281,7 @@ class ClocktowerGame:
         """Execute night 0 actions automatically and progress to day"""
         print("Executing Night 0 actions automatically...")
         
-        night_0_order = ["poisoner", "washerwoman", "librarian", "investigator", "chef", "empath", "fortune_teller", "undertaker", "butler", "spy"]
+        night_0_order = ["Poisoner", "Washerwoman", "Librarian", "Investigator", "Chef", "Empath", "Fortune Teller", "Undertaker", "Butler", "Spy"]
         
         from role_executor import RoleExecutor
         executor = RoleExecutor(self.players)
@@ -291,14 +289,14 @@ class ClocktowerGame:
         self.night_0_results = {}
         
         print(f"\n--- Executing Night 0 in Order ---")
-        for role_key in night_0_order:
+        for role in night_0_order:
             for player in self.players:
-                if player.role and player.role.name.lower().replace(" ", "_") == role_key and player.is_alive:
+                if player.role and player.role.name == role and player.is_alive:
                     print(f"Executing {player.username} ({player.role.name})")
-                    result = executor.execute_role_action(role_key, player.username, [])
+                    result = executor.execute_role_action(role, player.username, [])
                     print(f"  → {result}")
                     
-                    if result and result != f"{role_key} action not implemented" and result != "No target specified":
+                    if result and result != f"{role} action not implemented" and result != "No target specified":
                         self.night_0_results[player.username] = result
                     break
         
@@ -312,7 +310,8 @@ class ClocktowerGame:
     
     def _role_gets_information(self, role_name: str) -> bool:
         information_roles = [
-            "fortune_teller", "empath", "washerwoman", "librarian", 
-            "investigator", "chef", "undertaker", "ravenkeeper", "spy"
+            "Fortune Teller", "Empath", "Washerwoman", "Librarian", 
+            "Investigator", "Chef", "Undertaker", "Ravenkeeper", "Spy"
         ]
-        return role_name.lower() in information_roles
+        return role_name in information_roles
+    

@@ -157,26 +157,30 @@ class RoleExecutor:
     def scarlet_woman_action(self, username: str, choices: List[str]) -> str:
         return "Scarlet Woman is ready to become Demon"
     
+    def soldier_action(self, username: str, choices: List[str]) -> str:
+        return "Soldier is protected"
+    
 
     def execute_role_action(self, role_name: str, username: str, choices: List[str]) -> str:
         role_methods = {
-            "poisoner": self.poisoner_action,
-            "imp": self.imp_action,
-            "monk": self.monk_action,
-            "fortune_teller": self.fortune_teller_action,
-            "empath": self.empath_action,
-            "washerwoman": self.washerwoman_action,
-            "librarian": self.librarian_action,
-            "investigator": self.investigator_action,
-            "chef": self.chef_action,
-            "undertaker": self.undertaker_action,
-            "ravenkeeper": self.ravenkeeper_action,
-            "butler": self.butler_action,
-            "spy": self.spy_action,
-            "scarlet_woman": self.scarlet_woman_action
+            "Poisoner": self.poisoner_action,
+            "Imp": self.imp_action,
+            "Monk": self.monk_action,
+            "Fortune Teller": self.fortune_teller_action,
+            "Empath": self.empath_action,
+            "Washerwoman": self.washerwoman_action,
+            "Librarian": self.librarian_action,
+            "Investigator": self.investigator_action,
+            "Chef": self.chef_action,
+            "Undertaker": self.undertaker_action,
+            "Ravenkeeper": self.ravenkeeper_action,
+            "Butler": self.butler_action,
+            "Spy": self.spy_action,
+            "Scarlet Woman": self.scarlet_woman_action,
+            "Soldier": self.soldier_action
         }
 
-        if role_name.lower() in role_methods:
-            return role_methods[role_name.lower()](username, choices)
+        if role_name in role_methods:
+            return role_methods[role_name](username, choices)
         else:
             return f"{role_name} action not implemented"
