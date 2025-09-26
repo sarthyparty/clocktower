@@ -106,7 +106,7 @@ async def start_game(ctx, *players):
                     description=f"**{player.role.name}**\n{player.role.description}",
                     color=0x7289da
                 )
-                embed.add_field(name="Team", value=player.role.team.value.title(), inline=True)
+                embed.add_field(name="Alignment", value=f"{player.role.team.value.title()} ({player.role.role_type.value.title()})", inline=True)
                 await member.send(embed=embed)
                 await ctx.send(f"✅ Sent role to {player.username}", delete_after=3)
             except discord.Forbidden:
@@ -552,7 +552,7 @@ async def handle_action_dm(message):
                             for p in game.players
                         ]), inline=False)
                         
-                        await gitsend_night_action_results(guild, game)
+                        await send_night_action_results(guild, game)
                         await channel.send(embed=embed)
                         
                         del games[guild_id]
@@ -566,7 +566,7 @@ async def handle_action_dm(message):
                         if guild_id in test_mode_guilds:
                             del test_mode_guilds[guild_id]
                     else:
-                        await gitsend_night_action_results(guild, game)
+                        await send_night_action_results(guild, game)
                         
                         await channel.send(f"☀️ **Day {game.day_count} begins!**")
                         
