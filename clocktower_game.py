@@ -13,7 +13,7 @@ class ClocktowerGame:
         self.day_count: int = 0
         self.night_count: int = 0
         self._random = random
-        self.night_0_results: Dict[str, str] = {}
+        self.night_1_results: Dict[str, str] = {}
         self.night_action_results: Dict[str, str] = {}
         self.game_result: Optional[Dict] = None
 
@@ -184,8 +184,12 @@ class ClocktowerGame:
             role_name = player.role.name
             needs_input = False
 
-            if self.night_count == 0:
-                needs_input = False
+            if self.night_count == 1:
+                # Night 1 (first night) roles that need input (Chef gets info automatically)
+                if role_name in ["Poisoner", "Fortune Teller", "Butler", "Spy"]:
+                    needs_input = True
+                else:
+                    needs_input = False
             else:
                 if role_name in ["Monk", "Poisoner", "Imp", "Fortune Teller"]:
                     needs_input = True
@@ -221,7 +225,7 @@ class ClocktowerGame:
             print("No actions to execute")
             return
 
-        if self.night_count == 0:
+        if self.night_count == 1:
             night_order = ["Poisoner", "Washerwoman", "Librarian", "Investigator", "Chef", "Empath", "Fortune Teller", "Undertaker", "Butler", "Spy"]
         else:
             night_order = ["Poisoner", "Monk", "Scarlet Woman", "Imp", "Ravenkeeper", "Empath", "Fortune Teller", "Undertaker", "Butler", "Spy"]
@@ -246,14 +250,19 @@ class ClocktowerGame:
                 if self._role_gets_information(role) and result:
                     self.night_action_results[username] = result
             else:
-                if role in ["Spy", "Empath"]:
+                # Auto-execute information roles that don't need input
+                auto_info_roles = ["Spy", "Empath", "Washerwoman", "Librarian", "Investigator", "Chef", "Undertaker"]
+                if role in auto_info_roles:
                     for player in self.players:
                         if player.role and player.role.name == role and player.is_alive:
-                            print(f"Executing {player.username} ({role}): automatic")
+                            print(f"Processing {player.username} ({role}): automatic")
                             result = executor.execute_role_action(role, player.username, [])
                             print(f"  → {result}")
                             if result:
-                                self.night_action_results[player.username] = result
+                                if self.night_count == 1:
+                                    self.night_1_results[player.username] = result
+                                else:
+                                    self.night_action_results[player.username] = result
                             break
 
     def _on_actions_complete(self):
@@ -272,39 +281,48 @@ class ClocktowerGame:
         return None
         
     def _start_first_night(self):
-        """Automatically execute first night (night 0) without user input"""
-        print(f"\n=== STARTING NIGHT 0 (FIRST NIGHT) ===\n")
-        self.night_count = 0
-        
-        self._execute_night_0_actions()
-    
-    def _execute_night_0_actions(self):
-        """Execute night 0 actions automatically and progress to day"""
-        print("Processing Night 0 actions automatically...")
-        
-        night_0_order = ["Poisoner", "Washerwoman", "Librarian", "Investigator", "Chef", "Empath", "Fortune Teller", "Undertaker", "Butler", "Spy"]
+        """Start first night (night 1) with player action collection"""
+        print(f"\n=== STARTING NIGHT 1 (FIRST NIGHT) ===\n")
+        self.night_count = 1
+
+        self._collect_night_1_actions()
+
+    def _collect_night_1_actions(self):
+        """Collect Night 1 actions from players in the proper order"""
+        print("Starting Night 1 - players will be asked for their actions...")
+
+        # Update the action collection to start gathering Night 1 actions
+        self._collect_night_actions()
+
+    def _execute_night_1_actions(self):
+        """Execute night 1 actions automatically and progress to day"""
+        print("Processing Night 1 actions automatically...")
+
+        # Night 1 order: Poisoner -> First night only info roles -> Other info roles -> Butler -> Spy
+        night_1_order = ["Poisoner", "Washerwoman", "Librarian", "Investigator", "Chef", "Empath", "Fortune Teller", "Undertaker", "Butler", "Spy"]
         
         from role_executor import RoleExecutor
         executor = RoleExecutor(self.players)
         
-        self.night_0_results = {}
-        
-        print(f"\n--- Processing Night 0 Actions in Order ---")
-        for role_key in night_0_order:
+        self.night_1_results = {}
+
+        print(f"\n--- Processing Night 1 Actions in Order ---")
+        for role_key in night_1_order:
             for player in self.players:
-                if player.role and player.role.name.lower().replace(" ", "_") == role_key and player.is_alive:
+                print(player.role.name, role_key)
+                if player.role and player.role.name == role_key and player.is_alive:
                     print(f"Processing {player.username} ({player.role.name})")
                     result = executor.execute_role_action(role_key, player.username, [])
                     print(f"  → {result}")
-                    
-                    if result and result != f"{role} action not implemented" and result != "No target specified":
-                        self.night_0_results[player.username] = result
+
+                    if result and result != f"{role_key} action not implemented" and result != "No target specified":
+                        self.night_1_results[player.username] = result
                     break
         
         self._progress_to_day_automatically()
     
-    def get_night_0_results(self) -> Dict[str, str]:
-        return self.night_0_results.copy()
+    def get_night_1_results(self) -> Dict[str, str]:
+        return self.night_1_results.copy()
     
     def get_night_action_results(self) -> Dict[str, str]:
         return self.night_action_results.copy()

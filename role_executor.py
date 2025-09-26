@@ -127,9 +127,19 @@ class RoleExecutor:
             return f"{correct.username} is the {correct.role.name}"
 
     def chef_action(self, username: str, choices: List[str]) -> str:
-        evil_players = [p for p in self.players if p.role and p.role.team == Team.EVIL]
-        pairs = len(evil_players) * (len(evil_players) - 1) // 2
-        return f"There are {pairs} pairs of evil players"
+        # Chef counts pairs of evil players sitting next to each other
+        adjacent_evil_pairs = 0
+
+        for i in range(len(self.players)):
+            current_player = self.players[i]
+            next_player = self.players[(i + 1) % len(self.players)]  # Wrap around for circle
+
+            # Check if both adjacent players are evil
+            if (current_player.role and current_player.role.team == Team.EVIL and
+                next_player.role and next_player.role.team == Team.EVIL):
+                adjacent_evil_pairs += 1
+
+        return f"Pairs of adjacent evil players: {adjacent_evil_pairs}"
 
     def undertaker_action(self, username: str, choices: List[str]) -> str:
         return "Undertaker sees executed players"

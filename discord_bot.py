@@ -93,8 +93,8 @@ async def start_game(ctx, *players):
 
     await ctx.send(f"🎭 **Clocktower Game Started!**\n"
                    f"Players: {', '.join(players)}\n"
-                   f"Phase: {result['phase'].title()} {game.day_count}\n"
-                   f"Night 0 has been executed automatically!")
+                   f"Phase: {result['phase'].title()} {game.night_count}\n"
+                   f"Night 1 has begun - players will be asked for their actions!")
 
     dm_failures = []
     for player in game.players:
@@ -118,7 +118,8 @@ async def start_game(ctx, *players):
     if dm_failures:
         await ctx.send(f"⚠️ **Could not send DMs to:** {', '.join(dm_failures)}\nThey may have DMs disabled. Please ask them to enable DMs from server members.")
 
-    await send_night_0_results(ctx.guild, game, player_members)
+    # Send night action prompts for Night 1
+    await check_night_actions(ctx.guild)
 
 @bot.command(name='tstart')
 async def test_start_game(ctx, players_and_roles):
@@ -208,8 +209,8 @@ async def test_start_game(ctx, players_and_roles):
         await ctx.send(f"🧪 **Test Game Started!**\n"
                       f"Players: {', '.join(player_names)}\n"
                       f"Roles: {role_mode}\n"
-                      f"Phase: {result['phase'].title()} {game.day_count}\n"
-                      f"Night 0 has been executed automatically!\n\n"
+                      f"Phase: {result['phase'].title()} {game.night_count}\n"
+                      f"Night 1 has begun - players will be asked for their actions!\n\n"
                       f"**{ctx.author.mention}** will play as all characters")
 
         # Send role DMs
@@ -233,7 +234,8 @@ async def test_start_game(ctx, players_and_roles):
         if dm_failures:
             await ctx.send(f"⚠️ **Could not send DMs to:** {', '.join(dm_failures)}\nYou may have DMs disabled. Please enable DMs from server members.")
 
-        await send_night_0_results(ctx.guild, game, player_members)
+        # Send night action prompts for Night 1
+        await check_night_actions(ctx.guild)
 
     except Exception as e:
         await ctx.send(f"❌ **Error parsing command:** {str(e)}\nUsage: `!tstart \"player1,player2,... role1,role2,...\"`")
@@ -381,22 +383,22 @@ async def send_dm_to_player(guild_id, username, embed):
                         return False
         return False
 
-async def send_night_0_results(guild, game, player_members):
-    night_0_results = game.get_night_0_results()
-    
-    if not night_0_results:
+async def send_night_1_results(guild, game, player_members):
+    night_1_results = game.get_night_1_results()
+
+    if not night_1_results:
         return
     
     guild_id = guild.id
     dm_failures = []
     
-    for username, result in night_0_results.items():
+    for username, result in night_1_results.items():
         player = next((p for p in game.players if p.username == username), None)
         if not player or not player.role:
             continue
             
         embed = discord.Embed(
-            title="🌙 Night 0 Information",
+            title="🌙 Night 1 Information",
             description=f"**{player.role.name}**\nHere's what you learned during the first night:",
             color=0x5865f2
         )
@@ -412,7 +414,7 @@ async def send_night_0_results(guild, game, player_members):
         channel_id = game_channels.get(guild_id)
         channel = guild.get_channel(channel_id) if channel_id else None
         if channel:
-            await channel.send(f"⚠️ **Could not send night 0 results to:** {', '.join(dm_failures)}")
+            await channel.send(f"⚠️ **Could not send night 1 results to:** {', '.join(dm_failures)}")
 
 async def send_night_action_results(guild, game):
     night_results = game.get_night_action_results()
@@ -479,18 +481,14 @@ async def check_night_actions(guild):
             embed.add_field(name="Action", value="Choose 2 players to read", inline=False)
             if is_test_mode:
                 embed.add_field(name="Command", value=f"!action {username} player1 player2", inline=False)
-                embed.add_field(name="Example", value=f"!action {username} Alice Bob", inline=False)
             else:
                 embed.add_field(name="Command", value="!action player1 player2", inline=False)
-                embed.add_field(name="Example", value="!action Alice Bob", inline=False)
         elif role_name in ["Imp", "Poisoner", "Monk"]:
             embed.add_field(name="Action", value="Choose 1 player", inline=False)
             if is_test_mode:
                 embed.add_field(name="Command", value=f"!action {username} player_name", inline=False)
-                embed.add_field(name="Example", value=f"!action {username} Charlie", inline=False)
             else:
                 embed.add_field(name="Command", value="!action player_name", inline=False)
-                embed.add_field(name="Example", value="!action Charlie", inline=False)
         
         embed.add_field(name="Available Players", value=", ".join([p.username for p in game.players if p.is_alive and p.username != username]), inline=False)
 
@@ -527,7 +525,7 @@ async def handle_action_dm(message):
     
     if is_test_mode:
         if not parts:
-            await message.channel.send("❌ Test mode: You must specify which character is acting!\nExample: `!action Alice Bob Charlie` (Alice targets Bob and Charlie)")
+            await message.channel.send("❌ Test mode: You must specify which character is acting!\nFormat: `!action [character] [targets]`")
             return
         
         username = parts[0]
@@ -568,16 +566,8 @@ async def handle_action_dm(message):
         role_name = player.role.name
         if role_name == "Fortune Teller":
             embed.add_field(name="Required", value="2 players", inline=False)
-            if is_test_mode:
-                embed.add_field(name="Example", value=f"!action {username} Alice Bob", inline=False)
-            else:
-                embed.add_field(name="Example", value="!action Alice Bob", inline=False)
         elif role_name in ["Imp", "Poisoner", "Monk"]:
             embed.add_field(name="Required", value="1 player", inline=False)
-            if is_test_mode:
-                embed.add_field(name="Example", value=f"!action {username} Charlie", inline=False)
-            else:
-                embed.add_field(name="Example", value="!action Charlie", inline=False)
         
         alive_targets = [p.username for p in game.players if p.is_alive and p.username != username]
         embed.add_field(name="Available Targets", value=", ".join(alive_targets), inline=False)
@@ -603,103 +593,114 @@ async def handle_action_dm(message):
         await message.channel.send("❌ You cannot target the same player multiple times!")
         return
 
+    # Submit action directly without confirmation
+    result = game.submit_night_action(username, action_targets)
+
+    # # Commented out confirmation system - submit actions directly
+    # embed = discord.Embed(
+    #     title="🤔 Confirm Your Action",
+    #     description=f"**{username} ({role_name})**\nAre you sure you want to target: **{', '.join(action_targets)}**?",
+    #     color=0xffa500
+    # )
+    # embed.add_field(name="To Confirm", value="Type `y`, `yes`, or `!confirm`", inline=True)
+    # embed.add_field(name="To Cancel", value="Type `n`, `no`, or `!cancel`", inline=True)
+    #
+    # await message.channel.send(embed=embed)
+    #
+    # def check(m):
+    #     return m.author == message.author and m.channel == message.channel and m.content.lower() in ['!confirm', '!cancel', 'y', 'yes', 'n', 'no']
+    #
+    # try:
+    #     response = await bot.wait_for('message', check=check, timeout=60.0)
+    #
+    #     if response.content.lower() in ['!cancel', 'n', 'no']:
+    #         await message.channel.send("❌ Action cancelled.")
+    #         return
+    #
+    #     result = game.submit_night_action(username, action_targets)
+
+    if "error" in result:
+        await message.channel.send(f"❌ Error: {result['error']}")
+        return
+
     embed = discord.Embed(
-        title="🤔 Confirm Your Action",
-        description=f"**{username} ({role_name})**\nAre you sure you want to target: **{', '.join(action_targets)}**?",
-        color=0xffa500
+        title="✅ Action Submitted Successfully!",
+        description=f"**{username} ({role_name})** action targeting: **{', '.join(action_targets)}**",
+        color=0x00ff00
     )
-    embed.add_field(name="To Confirm", value="Type `y`, `yes`, or `!confirm`", inline=True)
-    embed.add_field(name="To Cancel", value="Type `n`, `no`, or `!cancel`", inline=True)
-    
+    embed.add_field(name="Status", value="Action has been recorded and will be executed at the end of the night.", inline=False)
+
     await message.channel.send(embed=embed)
-    
-    def check(m):
-        return m.author == message.author and m.channel == message.channel and m.content.lower() in ['!confirm', '!cancel', 'y', 'yes', 'n', 'no']
-    
-    try:
-        response = await bot.wait_for('message', check=check, timeout=60.0)
-        
-        if response.content.lower() in ['!cancel', 'n', 'no']:
-            await message.channel.send("❌ Action cancelled.")
-            return
-        
-        result = game.submit_night_action(username, action_targets)
 
-        if "error" in result:
-            await message.channel.send(f"❌ Error: {result['error']}")
-            return
+    if result.get("collection_complete"):
+        guild = bot.get_guild(guild_id)
+        if guild:
+            channel_id = game_channels.get(guild_id)
+            channel = guild.get_channel(channel_id) if channel_id else None
+            if channel:
+                await channel.send("🌙 All night actions submitted! Processing...")
 
-        embed = discord.Embed(
-            title="✅ Action Submitted Successfully!",
-            description=f"**{username} ({role_name})** action targeting: **{', '.join(action_targets)}**",
-            color=0x00ff00
-        )
-        embed.add_field(name="Status", value="Action has been recorded and will be executed at the end of the night.", inline=False)
-        
-        await message.channel.send(embed=embed)
+                game_result = result.get("game_result")
+                if game_result:
+                    winner = game_result["winner"]
+                    reason = game_result["reason"]
 
-        if result.get("collection_complete"):
-            guild = bot.get_guild(guild_id)
-            if guild:
-                channel_id = game_channels.get(guild_id)
-                channel = guild.get_channel(channel_id) if channel_id else None
-                if channel:
-                    await channel.send("🌙 All night actions submitted! Processing...")
-                    
-                    game_result = result.get("game_result")
-                    if game_result:
-                        winner = game_result["winner"]
-                        reason = game_result["reason"]
-                        
-                        embed = discord.Embed(
-                            title="🎯 GAME OVER!",
-                            description=f"**{winner.upper()} TEAM WINS!**",
-                            color=0xff0000 if winner == "evil" else 0x00ff00
-                        )
-                        embed.add_field(name="Reason", value=reason, inline=False)
-                        
-                        alive_players = [p for p in game.players if p.is_alive]
-                        dead_players = [p for p in game.players if not p.is_alive]
-                        
-                        if dead_players:
-                            deaths_list = [p.username for p in dead_players]
-                            embed.add_field(name="💀 Deaths", value=", ".join(deaths_list), inline=False)
-                        
-                        embed.add_field(name="🎭 Final Roles", value="\n".join([
-                            f"{'💀' if not p.is_alive else '✅'} **{p.username}**: {p.role.name} ({p.role.team.value})"
-                            for p in game.players
-                        ]), inline=False)
-                        
-                        await send_night_action_results(guild, game)
-                        await channel.send(embed=embed)
-                        
-                        del games[guild_id]
-                        if guild_id in game_channels:
-                            del game_channels[guild_id]
-                        to_remove = [uid for uid, gid in player_guilds.items() if gid == guild_id]
-                        for uid in to_remove:
-                            del player_guilds[uid]
-                            if uid in player_usernames:
-                                del player_usernames[uid]
-                        if guild_id in test_mode_guilds:
-                            del test_mode_guilds[guild_id]
+                    embed = discord.Embed(
+                        title="🎯 GAME OVER!",
+                        description=f"**{winner.upper()} TEAM WINS!**",
+                        color=0xff0000 if winner == "evil" else 0x00ff00
+                    )
+                    embed.add_field(name="Reason", value=reason, inline=False)
+
+                    alive_players = [p for p in game.players if p.is_alive]
+                    dead_players = [p for p in game.players if not p.is_alive]
+
+                    if dead_players:
+                        deaths_list = [p.username for p in dead_players]
+                        embed.add_field(name="💀 Deaths", value=", ".join(deaths_list), inline=False)
+
+                    embed.add_field(name="🎭 Final Roles", value="\n".join([
+                        f"{'💀' if not p.is_alive else '✅'} **{p.username}**: {p.role.name} ({p.role.team.value})"
+                        for p in game.players
+                    ]), inline=False)
+
+                    if game.night_count == 1:
+                        await send_night_1_results(guild, game, {})
                     else:
                         await send_night_action_results(guild, game)
-                        
-                        await channel.send(f"☀️ **Day {game.day_count} begins!**")
-                        
-                        alive_players = [p for p in game.players if p.is_alive]
-                        dead_players = [p for p in game.players if not p.is_alive]
-                        
-                        if dead_players:
-                            deaths_this_phase = []
-                            for p in dead_players:
-                                deaths_this_phase.append(p.username)
-                            if deaths_this_phase:
-                                await channel.send(f"💀 **Deaths:** {', '.join(deaths_this_phase)}")
-    
-    except asyncio.TimeoutError:
-        await message.channel.send("⏰ Confirmation timed out. Please submit your action again.")
+                    await channel.send(embed=embed)
+
+                    del games[guild_id]
+                    if guild_id in game_channels:
+                        del game_channels[guild_id]
+                    to_remove = [uid for uid, gid in player_guilds.items() if gid == guild_id]
+                    for uid in to_remove:
+                        del player_guilds[uid]
+                        if uid in player_usernames:
+                            del player_usernames[uid]
+                    if guild_id in test_mode_guilds:
+                        del test_mode_guilds[guild_id]
+                else:
+                    if game.night_count == 1:
+                        await send_night_1_results(guild, game, {})
+                    else:
+                        await send_night_action_results(guild, game)
+
+                    await channel.send(f"☀️ **Day {game.day_count} begins!**")
+
+                    alive_players = [p for p in game.players if p.is_alive]
+                    dead_players = [p for p in game.players if not p.is_alive]
+
+                    if dead_players:
+                        deaths_this_phase = []
+                        for p in dead_players:
+                            deaths_this_phase.append(p.username)
+                        if deaths_this_phase:
+                            await channel.send(f"💀 **Deaths:** {', '.join(deaths_this_phase)}")
+
+    # # Removed timeout handler since confirmation is disabled
+    # except asyncio.TimeoutError:
+    #     await message.channel.send("⏰ Confirmation timed out. Please submit your action again.")
 
 @bot.command(name='debug')
 async def debug_state(ctx):
@@ -757,12 +758,10 @@ async def help_command(ctx):
     embed.add_field(
         name="🌙 Night Actions (via DM)",
         value="**Normal Mode:**\n"
-              "• `!action <targets>` - Submit action\n"
-              "• Example: `!action Alice Bob`\n\n"
+              "• `!action <targets>` - Submit action\n\n"
               "**Test Mode:**\n"
-              "• `!action <character> <targets>` - Submit action for character\n"
-              "• Example: `!action Diana Alice Bob`\n\n"
-              "Both modes require `!confirm` or `!cancel`.",
+              "• `!action <character> <targets>` - Submit action for character\n\n"
+              "Actions are submitted immediately (no confirmation required).",
         inline=False
     )
 
@@ -778,7 +777,7 @@ async def help_command(ctx):
 
     embed.add_field(
         name="ℹ️ Important Notes",
-        value="• Night 0 executes automatically (no input needed)\n"
+        value="• Night 1 requires player actions (you'll be DMed instructions)\n"
               "• You'll receive DMs with your starting information\n"
               "• Only alive players can submit actions\n"
               "• Actions can only be submitted during night phase\n"

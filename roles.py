@@ -48,7 +48,7 @@ roles = {
                                 "You start knowing that 1 of 2 players is a particular Minion.",
                                 first_night_order=3),
             "Chef": Role("Chef", RoleType.TOWNSFOLK, Team.GOOD,
-                        "You start knowing how many pairs of evil players there are.",
+                        "You start knowing how many pairs of evil players are sitting next to each other.",
                         first_night_order=4),
             "Empath": Role("Empath", RoleType.TOWNSFOLK, Team.GOOD,
                           "Each night, you learn how many of your 2 alive neighbors are evil.",
