@@ -234,11 +234,11 @@ class ClocktowerGame:
         from role_executor import RoleExecutor
         executor = RoleExecutor(self.players)
 
-        print(f"\n--- Executing in Night Order ---")
+        print(f"\n--- Processing Night Actions in Order ---")
         for role in night_order:
             if role in actions_by_role:
                 username, action_data = actions_by_role[role]
-                print(f"Executing {username} ({role}): {action_data['choices']}")
+                print(f"Processing {username} ({role}): {action_data['choices']}")
                 role_key = role.lower().replace(" ", "_")
                 result = executor.execute_role_action(role_key, username, action_data['choices'])
                 print(f"  → {result}")
@@ -270,7 +270,7 @@ class ClocktowerGame:
     
     def _execute_night_0_actions(self):
         """Execute night 0 actions automatically and progress to day"""
-        print("Executing Night 0 actions automatically...")
+        print("Processing Night 0 actions automatically...")
         
         night_0_order = ["poisoner", "washerwoman", "librarian", "investigator", "chef", "empath", "fortune_teller", "undertaker", "butler", "spy"]
         
@@ -279,11 +279,11 @@ class ClocktowerGame:
         
         self.night_0_results = {}
         
-        print(f"\n--- Executing Night 0 in Order ---")
+        print(f"\n--- Processing Night 0 Actions in Order ---")
         for role_key in night_0_order:
             for player in self.players:
                 if player.role and player.role.name.lower().replace(" ", "_") == role_key and player.is_alive:
-                    print(f"Executing {player.username} ({player.role.name})")
+                    print(f"Processing {player.username} ({player.role.name})")
                     result = executor.execute_role_action(role_key, player.username, [])
                     print(f"  → {result}")
                     

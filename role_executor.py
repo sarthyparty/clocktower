@@ -86,7 +86,7 @@ class RoleExecutor:
             other = random.choice(others)
             pair = [correct, other]
             random.shuffle(pair)
-            return f"One of {pair[0].username} or {pair[1].username} is the {correct.role.name}"
+            return f"Player [{pair[0].username}] or [{pair[1].username}] is the {correct.role.name}"
         else:
             return f"{correct.username} is the {correct.role.name}"
 
@@ -104,7 +104,7 @@ class RoleExecutor:
             other = random.choice(others)
             pair = [correct, other]
             random.shuffle(pair)
-            return f"One of {pair[0].username} or {pair[1].username} is the {correct.role.name}"
+            return f"Player [{pair[0].username}] or [{pair[1].username}] is the {correct.role.name}"
         else:
             return f"{correct.username} is the {correct.role.name}"
 
@@ -122,7 +122,7 @@ class RoleExecutor:
             other = random.choice(others)
             pair = [correct, other]
             random.shuffle(pair)
-            return f"One of {pair[0].username} or {pair[1].username} is the {correct.role.name}"
+            return f"Player [{pair[0].username}] or [{pair[1].username}] is the {correct.role.name}"
         else:
             return f"{correct.username} is the {correct.role.name}"
 

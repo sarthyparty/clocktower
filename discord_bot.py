@@ -590,18 +590,18 @@ async def handle_action_dm(message):
         description=f"**{username} ({role_name})**\nAre you sure you want to target: **{', '.join(action_targets)}**?",
         color=0xffa500
     )
-    embed.add_field(name="To Confirm", value="Type `!confirm`", inline=True)
-    embed.add_field(name="To Cancel", value="Type `!cancel`", inline=True)
+    embed.add_field(name="To Confirm", value="Type `y`, `yes`, or `!confirm`", inline=True)
+    embed.add_field(name="To Cancel", value="Type `n`, `no`, or `!cancel`", inline=True)
     
     await message.channel.send(embed=embed)
     
     def check(m):
-        return m.author == message.author and m.channel == message.channel and m.content.lower() in ['!confirm', '!cancel']
+        return m.author == message.author and m.channel == message.channel and m.content.lower() in ['!confirm', '!cancel', 'y', 'yes', 'n', 'no']
     
     try:
         response = await bot.wait_for('message', check=check, timeout=60.0)
         
-        if response.content.lower() == '!cancel':
+        if response.content.lower() in ['!cancel', 'n', 'no']:
             await message.channel.send("❌ Action cancelled.")
             return
         
@@ -626,7 +626,7 @@ async def handle_action_dm(message):
                 channel_id = game_channels.get(guild_id)
                 channel = guild.get_channel(channel_id) if channel_id else None
                 if channel:
-                    await channel.send("🌙 All night actions submitted! Executing...")
+                    await channel.send("🌙 All night actions submitted! Processing...")
                     
                     game_result = result.get("game_result")
                     if game_result:
@@ -652,7 +652,7 @@ async def handle_action_dm(message):
                             for p in game.players
                         ]), inline=False)
                         
-                        await send_night_action_results(guild, game)
+                        await gitsend_night_action_results(guild, game)
                         await channel.send(embed=embed)
                         
                         del games[guild_id]
@@ -666,7 +666,7 @@ async def handle_action_dm(message):
                         if guild_id in test_mode_guilds:
                             del test_mode_guilds[guild_id]
                     else:
-                        await send_night_action_results(guild, game)
+                        await gitsend_night_action_results(guild, game)
                         
                         await channel.send(f"☀️ **Day {game.day_count} begins!**")
                         
