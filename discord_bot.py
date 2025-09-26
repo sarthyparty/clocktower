@@ -120,6 +120,124 @@ async def start_game(ctx, *players):
 
     await send_night_0_results(ctx.guild, game, player_members)
 
+@bot.command(name='tstart')
+async def test_start_game(ctx, players_and_roles):
+    """
+    Start a test game with specific role assignments.
+    Usage: !tstart "Alice,Bob,Charlie,Diana,Eve Monk,Imp,Poisoner,Chef,Fortune Teller"
+    Or: !tstart "Alice,Bob,Charlie,Diana,Eve Monk,Imp" (forces Monk and Imp, randomizes others)
+    """
+    if ctx.guild is None:
+        await ctx.send("This command must be used in a server, not DMs.")
+        return
+
+    guild_id = ctx.guild.id
+
+    if guild_id in games:
+        await ctx.send("A game is already running in this server!")
+        return
+
+    try:
+        # Parse the input: "Alice,Bob,Charlie,Diana,Eve Monk,Imp,Poisoner,Chef,Fortune Teller"
+        parts = players_and_roles.split(' ', 1)
+        if len(parts) != 2:
+            await ctx.send("❌ **Invalid format!**\nUsage: `!tstart \"player1,player2,... role1,role2,...\"`\nExample: `!tstart \"Alice,Bob,Charlie,Diana,Eve Monk,Imp,Poisoner,Chef,Fortune Teller\"`")
+            return
+
+        player_names = [name.strip() for name in parts[0].split(',')]
+        role_names = [name.strip() for name in parts[1].split(',')]
+
+        if len(player_names) < 5 or len(player_names) > 15:
+            await ctx.send("Need 5-15 players to start a game!")
+            return
+
+        # Available roles mapping (case-insensitive)
+        from roles import roles
+        available_roles = {role.lower(): role for role in roles.keys()}
+
+        # Validate roles
+        validated_roles = []
+        for role_name in role_names:
+            role_key = role_name.lower()
+            if role_key in available_roles:
+                validated_roles.append(available_roles[role_key])
+            else:
+                await ctx.send(f"❌ **Unknown role:** {role_name}\nAvailable roles: {', '.join(roles.keys())}")
+                return
+
+        # Enable test mode for this guild
+        test_mode_guilds[guild_id] = True
+
+        # Create player list (all mapped to command author in test mode)
+        members = [ctx.author] * len(player_names)
+        player_members = {player_names[i]: ctx.author for i in range(len(player_names))}
+
+        # Create role assignment
+        if len(validated_roles) == len(player_names):
+            # Complete role assignment provided
+            hardcoded_roles = {player_names[i]: validated_roles[i] for i in range(len(player_names))}
+            role_mode = "Complete role assignment"
+        elif len(validated_roles) <= len(player_names):
+            # Partial role assignment (force specific roles, randomize rest)
+            hardcoded_roles = {player_names[i]: validated_roles[i] for i in range(len(validated_roles))}
+            role_mode = f"Forced {len(validated_roles)} roles, randomized {len(player_names) - len(validated_roles)} others"
+        else:
+            await ctx.send(f"❌ **Too many roles!** You specified {len(validated_roles)} roles for {len(player_names)} players.")
+            return
+
+        # Create new game
+        game = ClocktowerGame()
+        games[guild_id] = game
+        game_channels[guild_id] = ctx.channel.id
+
+        # Map members to this guild and store their IDs
+        for i, member in enumerate(members):
+            player_guilds[member.id] = guild_id
+            player_usernames[member.id] = player_names[i]
+
+        # Start the game with hardcoded roles
+        result = game.start_game(list(player_names), hardcoded_roles)
+
+        if "error" in result:
+            await ctx.send(f"Error starting game: {result['error']}")
+            del games[guild_id]
+            if guild_id in game_channels:
+                del game_channels[guild_id]
+            return
+
+        await ctx.send(f"🧪 **Test Game Started!**\n"
+                      f"Players: {', '.join(player_names)}\n"
+                      f"Roles: {role_mode}\n"
+                      f"Phase: {result['phase'].title()} {game.day_count}\n"
+                      f"Night 0 has been executed automatically!\n\n"
+                      f"**{ctx.author.mention}** will play as all characters")
+
+        # Send role DMs
+        dm_failures = []
+        for player in game.players:
+            if player.role:
+                try:
+                    embed = discord.Embed(
+                        title="🎭 Your Role",
+                        description=f"**{player.username}: {player.role.name}**\n{player.role.description}",
+                        color=0x7289da
+                    )
+                    embed.add_field(name="Alignment", value=f"{player.role.team.value.title()} ({player.role.role_type.value.title()})", inline=True)
+                    await ctx.author.send(embed=embed)
+                except discord.Forbidden:
+                    dm_failures.append(player.username)
+                except Exception as e:
+                    print(f"Failed to DM {player.username}: {e}")
+                    dm_failures.append(player.username)
+
+        if dm_failures:
+            await ctx.send(f"⚠️ **Could not send DMs to:** {', '.join(dm_failures)}\nYou may have DMs disabled. Please enable DMs from server members.")
+
+        await send_night_0_results(ctx.guild, game, player_members)
+
+    except Exception as e:
+        await ctx.send(f"❌ **Error parsing command:** {str(e)}\nUsage: `!tstart \"player1,player2,... role1,role2,...\"`")
+
 @bot.command(name='night')
 async def progress_to_night(ctx):
     if ctx.guild is None:
@@ -628,6 +746,7 @@ async def help_command(ctx):
         name="🎮 Game Commands",
         value="`!test` - Enable test mode (single user plays all characters)\n"
               "`!start player1 player2 ...` - Start a new game\n"
+              "`!tstart \"players roles\"` - Start test game with specific roles\n"
               "`!night` - Progress to night (manual)\n"
               "`!state` - Show public game state\n"
               "`!debug` - Show debug info (all roles visible)\n"
@@ -646,7 +765,17 @@ async def help_command(ctx):
               "Both modes require `!confirm` or `!cancel`.",
         inline=False
     )
-    
+
+    embed.add_field(
+        name="🧪 Test Mode with Roles",
+        value="**Complete Assignment:**\n"
+              "`!tstart \"Alice,Bob,Charlie,Diana,Eve Monk,Imp,Poisoner,Chef,Fortune Teller\"`\n\n"
+              "**Forced Roles (others random):**\n"
+              "`!tstart \"Alice,Bob,Charlie,Diana,Eve Monk,Imp\"`\n\n"
+              "Available roles: Washerwoman, Librarian, Investigator, Chef, Empath, Fortune Teller, Monk, Ravenkeeper, Virgin, Slayer, Soldier, Mayor, Recluse, Saint, Drunk, Poisoner, Spy, Scarlet Woman, Baron, Imp",
+        inline=False
+    )
+
     embed.add_field(
         name="ℹ️ Important Notes",
         value="• Night 0 executes automatically (no input needed)\n"
