@@ -49,26 +49,27 @@ async def start_game(ctx, *players):
 
     is_test_mode = test_mode_guilds.get(guild_id, False)
     
-    if is_test_mode:
-        members = [ctx.author] * len(players)
-        player_members = {players[i]: ctx.author for i in range(len(players))}
-        await ctx.send(f"🧪 **Test mode active** - {ctx.author.mention} will play as all characters")
-    else:
-        members = []
-        missing_players = []
+    members = []
+    missing_players = []
 
-        for player_name in players:
-            member = discord.utils.find(lambda m: m.name == player_name or m.display_name == player_name or str(m) == player_name, ctx.guild.members)
-            if member:
-                members.append(member)
+    for player_name in players:
+        member = discord.utils.find(lambda m: m.name == player_name or m.display_name == player_name or str(m) == player_name, ctx.guild.members)
+        if member:
+            members.append(member)
+        else:
+            if is_test_mode:
+                members.append(ctx.author)
             else:
                 missing_players.append(player_name)
 
-        if missing_players:
-            await ctx.send(f"❌ **Cannot start game!**\nThe following players are not in this server: {', '.join(missing_players)}\n\nPlease make sure all player names match Discord usernames or display names in this server.")
-            return
-        
-        player_members = {players[i]: members[i] for i in range(len(players))}
+    if missing_players:
+        await ctx.send(f"❌ **Cannot start game!**\nThe following players are not in this server: {', '.join(missing_players)}\n\nUse `!test` first to enable test mode for testing with any usernames.")
+        return
+    
+    player_members = {players[i]: members[i] for i in range(len(players))}
+    
+    if is_test_mode:
+        await ctx.send(f"🧪 **Test mode active** - {ctx.author.mention} will play as all characters")
 
     # Create new game
     game = ClocktowerGame()
@@ -76,12 +77,9 @@ async def start_game(ctx, *players):
     game_channels[guild_id] = ctx.channel.id
 
     # Map members to this guild and store their IDs
-    if not is_test_mode:
-        for i, member in enumerate(members):
-            player_guilds[member.id] = guild_id
-            player_usernames[member.id] = players[i]
-    else:
-        player_guilds[ctx.author.id] = guild_id
+    for i, member in enumerate(members):
+        player_guilds[member.id] = guild_id
+        player_usernames[member.id] = players[i]
 
     # Start the game
     result = game.start_game(list(players))
@@ -120,7 +118,7 @@ async def start_game(ctx, *players):
     if dm_failures:
         await ctx.send(f"⚠️ **Could not send DMs to:** {', '.join(dm_failures)}\nThey may have DMs disabled. Please ask them to enable DMs from server members.")
 
-    await send_night_0_results(ctx.guild, game, player_members, is_test_mode)
+    await send_night_0_results(ctx.guild, game, player_members)
 
 @bot.command(name='night')
 async def progress_to_night(ctx):
@@ -225,154 +223,106 @@ async def game_state(ctx):
 
     await ctx.send(embed=embed)
 
-async def send_night_0_results(guild, game, player_members, is_test_mode=False):
+async def send_dm_to_player(guild_id, username, embed):
+    is_test_mode = test_mode_guilds.get(guild_id, False)
+    
+    if is_test_mode:
+        test_user_id = None
+        for uid, gid in player_guilds.items():
+            if gid == guild_id:
+                test_user_id = uid
+                break
+        
+        if test_user_id:
+            guild = bot.get_guild(guild_id)
+            if guild:
+                test_member = guild.get_member(test_user_id)
+                if test_member:
+                    try:
+                        await test_member.send(embed=embed)
+                        return True
+                    except discord.Forbidden:
+                        return False
+        return False
+    else:
+        member_id = None
+        for uid, uname in player_usernames.items():
+            if uname == username and player_guilds.get(uid) == guild_id:
+                member_id = uid
+                break
+        
+        if member_id:
+            guild = bot.get_guild(guild_id)
+            if guild:
+                member = guild.get_member(member_id)
+                if member:
+                    try:
+                        await member.send(embed=embed)
+                        return True
+                    except discord.Forbidden:
+                        return False
+        return False
+
+async def send_night_0_results(guild, game, player_members):
     night_0_results = game.get_night_0_results()
     
     if not night_0_results:
         return
     
+    guild_id = guild.id
     dm_failures = []
     
-    if is_test_mode:
-        guild_id = guild.id
-        test_user_id = None
-        for uid, gid in player_guilds.items():
-            if gid == guild_id:
-                test_user_id = uid
-                break
+    for username, result in night_0_results.items():
+        player = next((p for p in game.players if p.username == username), None)
+        if not player or not player.role:
+            continue
+            
+        embed = discord.Embed(
+            title="🌙 Night 0 Information",
+            description=f"**{player.role.name}**\nHere's what you learned during the first night:",
+            color=0x5865f2
+        )
         
-        if test_user_id:
-            test_member = guild.get_member(test_user_id)
-            if test_member:
-                embed = discord.Embed(
-                    title="🧪🌙 Test Mode - Night 0 Information",
-                    description="Here's what your characters learned:",
-                    color=0x5865f2
-                )
-                
-                for username, result in night_0_results.items():
-                    player = next((p for p in game.players if p.username == username), None)
-                    if player and player.role:
-                        embed.add_field(
-                            name=f"{username} ({player.role.name})",
-                            value=result,
-                            inline=False
-                        )
-                
-                try:
-                    await test_member.send(embed=embed)
-                except discord.Forbidden:
-                    dm_failures.extend(night_0_results.keys())
-    else:
-        for username, result in night_0_results.items():
-            member = player_members.get(username)
-            if not member:
-                continue
-                
-            player = next((p for p in game.players if p.username == username), None)
-            if not player or not player.role:
-                continue
-                
-            embed = discord.Embed(
-                title="🌙 Night 0 Information",
-                description=f"**{player.role.name}**\nHere's what you learned during the first night:",
-                color=0x5865f2
-            )
-            
-            embed.add_field(name="Your Information", value=result, inline=False)
-            embed.add_field(name="Remember", value="Keep this information secret! Use it wisely during the day.", inline=False)
-            
-            try:
-                await member.send(embed=embed)
-            except discord.Forbidden:
-                dm_failures.append(username)
-            except Exception as e:
-                print(f"Failed to send night 0 result to {username}: {e}")
-                dm_failures.append(username)
+        embed.add_field(name="Your Information", value=result, inline=False)
+        embed.add_field(name="Remember", value="Keep this information secret! Use it wisely during the day.", inline=False)
+        
+        success = await send_dm_to_player(guild_id, username, embed)
+        if not success:
+            dm_failures.append(username)
     
     if dm_failures:
-        guild_id = guild.id
         channel_id = game_channels.get(guild_id)
         channel = guild.get_channel(channel_id) if channel_id else None
         if channel:
             await channel.send(f"⚠️ **Could not send night 0 results to:** {', '.join(dm_failures)}")
 
-async def gitsend_night_action_results(guild, game):
+async def send_night_action_results(guild, game):
     night_results = game.get_night_action_results()
     
     if not night_results:
         return
     
-    is_test_mode = test_mode_guilds.get(guild.id, False)
+    guild_id = guild.id
     dm_failures = []
     
-    if is_test_mode:
-        guild_id = guild.id
-        test_user_id = None
-        for uid, gid in player_guilds.items():
-            if gid == guild_id:
-                test_user_id = uid
-                break
+    for username, result in night_results.items():
+        player = next((p for p in game.players if p.username == username), None)
+        if not player or not player.role:
+            continue
+            
+        embed = discord.Embed(
+            title=f"🌙 Night {game.night_count} Information",
+            description=f"**{player.role.name}**\nHere's what you learned:",
+            color=0x5865f2
+        )
         
-        if test_user_id:
-            test_member = guild.get_member(test_user_id)
-            if test_member:
-                embed = discord.Embed(
-                    title=f"🧪🌙 Test Mode - Night {game.night_count} Results",
-                    description="Your characters learned:",
-                    color=0x5865f2
-                )
-                
-                for username, result in night_results.items():
-                    player = next((p for p in game.players if p.username == username), None)
-                    if player and player.role:
-                        embed.add_field(
-                            name=f"{username} ({player.role.name})",
-                            value=result,
-                            inline=False
-                        )
-                
-                try:
-                    await test_member.send(embed=embed)
-                except discord.Forbidden:
-                    dm_failures.extend(night_results.keys())
-    else:
-        for username, result in night_results.items():
-            member_id = None
-            for uid, uname in player_usernames.items():
-                if uname == username and player_guilds.get(uid) == guild.id:
-                    member_id = uid
-                    break
-            
-            if not member_id:
-                continue
-                
-            member = guild.get_member(member_id)
-            if not member:
-                continue
-                
-            player = next((p for p in game.players if p.username == username), None)
-            if not player or not player.role:
-                continue
-                
-            embed = discord.Embed(
-                title=f"🌙 Night {game.night_count} Information",
-                description=f"**{player.role.name}**\nHere's what you learned:",
-                color=0x5865f2
-            )
-            
-            embed.add_field(name="Your Information", value=result, inline=False)
-            
-            try:
-                await member.send(embed=embed)
-            except discord.Forbidden:
-                dm_failures.append(username)
-            except Exception as e:
-                print(f"Failed to send night result to {username}: {e}")
-                dm_failures.append(username)
+        embed.add_field(name="Your Information", value=result, inline=False)
+        
+        success = await send_dm_to_player(guild_id, username, embed)
+        if not success:
+            dm_failures.append(username)
     
     if dm_failures:
-        guild_id = guild.id
         channel_id = game_channels.get(guild_id)
         channel = guild.get_channel(channel_id) if channel_id else None
         if channel:
@@ -394,89 +344,39 @@ async def check_night_actions(guild):
 
     is_test_mode = test_mode_guilds.get(guild_id, False)
     
-    if is_test_mode:
-        test_user_id = None
-        for uid, gid in player_guilds.items():
-            if gid == guild_id:
-                test_user_id = uid
-                break
-        
-        if test_user_id:
-            test_member = guild.get_member(test_user_id)
-            if test_member:
-                embed = discord.Embed(
-                    title="🧪🌙 Test Mode - Night Actions Required",
-                    description="Your characters need to submit night actions:",
-                    color=0x992d22
-                )
-                
-                for username in status["pending_players"]:
-                    player = next((p for p in game.players if p.username == username), None)
-                    if player and player.role:
-                        role_name = player.role.name
-                        available = [p.username for p in game.players if p.is_alive and p.username != username]
-                        
-                        if role_name == "Fortune Teller":
-                            action_text = f"Needs 2 targets\nExample: `!action {username} Alice Bob`"
-                        elif role_name in ["Imp", "Poisoner", "Monk"]:
-                            action_text = f"Needs 1 target\nExample: `!action {username} Charlie`"
-                        else:
-                            action_text = "Action required"
-                        
-                        embed.add_field(
-                            name=f"{username} ({role_name})",
-                            value=action_text,
-                            inline=False
-                        )
-                
-                embed.add_field(name="Available Targets", value=", ".join([p.username for p in game.players if p.is_alive]), inline=False)
-                
-                try:
-                    await test_member.send(embed=embed)
-                except discord.Forbidden:
-                    pass
-    else:
-        for username in status["pending_players"]:
-            member_id = None
-            for uid, uname in player_usernames.items():
-                if uname == username and player_guilds.get(uid) == guild_id:
-                    member_id = uid
-                    break
+    for username in status["pending_players"]:
+        player = next((p for p in game.players if p.username == username), None)
+        if not player or not player.role:
+            continue
             
-            if not member_id:
-                continue
-                
-            member = guild.get_member(member_id)
-            if not member:
-                continue
-                
-            player = next((p for p in game.players if p.username == username), None)
-            if not player or not player.role:
-                continue
-                
-            role_name = player.role.name
+        role_name = player.role.name
 
-            embed = discord.Embed(
-                title="🌙 Night Action Required",
-                description=f"**{role_name}**\nYou need to submit your night action!",
-                color=0x992d22
-            )
+        embed = discord.Embed(
+            title="🌙 Night Action Required",
+            description=f"**{role_name}**\nYou need to submit your night action!",
+            color=0x992d22
+        )
 
-            if role_name == "Fortune Teller":
-                embed.add_field(name="Action", value="Choose 2 players to read", inline=False)
+        if role_name == "Fortune Teller":
+            embed.add_field(name="Action", value="Choose 2 players to read", inline=False)
+            if is_test_mode:
+                embed.add_field(name="Command", value=f"!action {username} player1 player2", inline=False)
+                embed.add_field(name="Example", value=f"!action {username} Alice Bob", inline=False)
+            else:
                 embed.add_field(name="Command", value="!action player1 player2", inline=False)
                 embed.add_field(name="Example", value="!action Alice Bob", inline=False)
-            elif role_name in ["Imp", "Poisoner", "Monk"]:
-                embed.add_field(name="Action", value="Choose 1 player", inline=False)
+        elif role_name in ["Imp", "Poisoner", "Monk"]:
+            embed.add_field(name="Action", value="Choose 1 player", inline=False)
+            if is_test_mode:
+                embed.add_field(name="Command", value=f"!action {username} player_name", inline=False)
+                embed.add_field(name="Example", value=f"!action {username} Charlie", inline=False)
+            else:
                 embed.add_field(name="Command", value="!action player_name", inline=False)
                 embed.add_field(name="Example", value="!action Charlie", inline=False)
-            
-            embed.add_field(name="Available Players", value=", ".join([p.username for p in game.players if p.is_alive and p.username != username]), inline=False)
+        
+        embed.add_field(name="Available Players", value=", ".join([p.username for p in game.players if p.is_alive and p.username != username]), inline=False)
 
-            try:
-                await member.send(embed=embed)
-            except discord.Forbidden:
-                pass
+        await send_dm_to_player(guild_id, username, embed)
 
 @bot.event
 async def on_message(message):
@@ -742,8 +642,8 @@ async def help_command(ctx):
               "• Example: `!action Alice Bob`\n\n"
               "**Test Mode:**\n"
               "• `!action <character> <targets>` - Submit action for character\n"
-              "• Example: `!action Diana Alice Bob` (Diana targets Alice and Bob)\n\n"
-              "Both modes require `!confirm` or `!cancel` after submission.",
+              "• Example: `!action Diana Alice Bob`\n\n"
+              "Both modes require `!confirm` or `!cancel`.",
         inline=False
     )
     

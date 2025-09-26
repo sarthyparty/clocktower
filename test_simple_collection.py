@@ -4,11 +4,11 @@ game = ClocktowerGame()
 
 usernames = ["Alice", "Bob", "Charlie", "Diana", "Eve"]
 hardcoded_roles = {
-    "Alice": "imp",
-    "Bob": "poisoner", 
-    "Charlie": "monk",
-    "Diana": "fortune_teller",
-    "Eve": "empath"
+    "Alice": "Imp",
+    "Bob": "Poisoner", 
+    "Charlie": "Monk",
+    "Diana": "Fortune Teller",
+    "Eve": "Empath"
 }
 
 print("=== STARTING GAME ===")
